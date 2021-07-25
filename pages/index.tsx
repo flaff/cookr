@@ -5,8 +5,6 @@ import { fetchIngredients } from '../contentful/ingredients'
 import { LinesToMd } from '../components/LinesToMd'
 
 export default function Home({ ingredients }) {
-  console.log(ingredients)
-
   return (
     <div>`
       <Head>
