@@ -158,7 +158,6 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
   const [categorise, setCategorise] = useState(true);
   const [sourceText, setSourceText] = useState("");
   const [mergeMaxScore, setMergeMaxScore] = useState(20);
-  const [categoriseMaxScore, setCategoriseMaxScore] = useState(80);
   const [categorisedProducts, setCategorisedProducts] = useState<{
     [category: string]: Product[];
   }>({});
@@ -180,19 +179,15 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
         (
           text: string,
           {
-            matchingRules,
             mergeMaxScore,
-            categoriseMaxScore,
             showMerged,
             mergeSimilar,
             categorise,
             matchingRuleRegexes,
           }: {
-            matchingRules: IngredientCategoryMatchingRule[];
             mergeMaxScore: number;
-            mergeSimilar: boolean;
             showMerged: boolean;
-            categoriseMaxScore: number;
+            mergeSimilar: boolean;
             categorise: boolean;
             matchingRuleRegexes: any;
           }
@@ -276,20 +271,16 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
     updateMarkdownText(sourceText, {
       mergeMaxScore,
       mergeSimilar,
-      categoriseMaxScore,
       categorise,
       showMerged,
-      matchingRules,
       matchingRuleRegexes,
     });
   }, [
     sourceText,
     mergeMaxScore,
     mergeSimilar,
-    categoriseMaxScore,
     categorise,
     showMerged,
-    matchingRules,
     matchingRuleRegexes,
   ]);
 
@@ -370,14 +361,6 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
                         onClick={() => setCategorise((i) => !i)}
                       />
                     </Tooltip>
-                    <FatSlider
-                      value={categorise ? categoriseMaxScore : 0}
-                      onChange={(value) => setCategoriseMaxScore(value)}
-                      min={0}
-                      max={100}
-                      step={5}
-                      disabled={!categorise}
-                    />
                     <ViewMatchRulesButton
                       matchingRules={matchingRules}
                       categorisedProducts={categorisedProducts}
