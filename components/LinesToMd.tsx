@@ -164,7 +164,22 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
   const [markdownText, setMarkdownText] = useState("");
 
   const matchingRulesFuse = useMemo(
-    () => new Fuse(matchingRules, { includeScore: true, keys: ["contains"] }),
+    () =>
+      new Fuse(matchingRules, {
+        includeScore: true,
+        keys: ["contains"],
+        isCaseSensitive: false,
+        useExtendedSearch: true,
+      }),
+    [matchingRules]
+  );
+
+  const matchingRuleRegexes = useMemo(
+    () =>
+      matchingRules.map((matchingRule) => ({
+        ...matchingRule,
+        contains: new RegExp(matchingRule.contains, "i"),
+      })),
     [matchingRules]
   );
 
@@ -181,6 +196,7 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
             mergeSimilar,
             matchingRulesFuse,
             categorise,
+            matchingRuleRegexes,
           }: {
             matchingRules: IngredientCategoryMatchingRule[];
             mergeMaxScore: number;
@@ -189,6 +205,7 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
             categoriseMaxScore: number;
             categorise: boolean;
             matchingRulesFuse: any;
+            matchingRuleRegexes: any;
           }
         ) => {
           const products = text
@@ -211,14 +228,27 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
             const categorisedProducts = {};
 
             for (const product of products) {
-              const [result] = matchingRulesFuse
-                .search(product.name.toLowerCase())
-                .sort((a, b) => (a.score > b.score ? 1 : -1));
+              const [fuzzyResult] = matchingRulesFuse
+                .search(product.name)
+                .sort((a, b) => (a.score > b.score ? 1 : -1))
+                .filter((result) => result.score <= categoriseMaxScore / 100);
 
-              const categoryName =
-                result && result.score <= categoriseMaxScore / 100
-                  ? result.item.category.name
-                  : "Nieznane";
+              const regexResult =
+                !fuzzyResult &&
+                matchingRuleRegexes.find((matchingRule) =>
+                  matchingRule.contains.test(product.name)
+                );
+
+              const result =
+                fuzzyResult ||
+                (regexResult && {
+                  score: -1,
+                  item: regexResult,
+                });
+
+              const categoryName = result
+                ? result.item.category.name
+                : "Nieznane";
 
               categorisedProducts[categoryName] = [
                 ...(categorisedProducts[categoryName] || []),
@@ -236,10 +266,18 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
 
               let nextMarkdownText = "";
 
-              for (const categoryName of Object.keys(categorisedProducts)) {
+              const sortedCategoryNames = Object.keys(categorisedProducts).sort(
+                (categoryNameA, categoryNameB) =>
+                  (categoryNameA === "Nieznane" && -1) ||
+                  (categoryNameA > categoryNameB ? 1 : -1)
+              );
+
+              for (const categoryName of sortedCategoryNames) {
                 const products = categorisedProducts[categoryName];
                 if (categoryName !== "Nieznane") {
                   nextMarkdownText += `\n## ${categoryName}\n`;
+                } else {
+                  nextMarkdownText += `\n`;
                 }
                 nextMarkdownText += products
                   .map(productToText({ showMerged }))
@@ -271,6 +309,7 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
       showMerged,
       matchingRulesFuse,
       matchingRules,
+      matchingRuleRegexes,
     });
   }, [
     sourceText,
@@ -281,6 +320,7 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
     showMerged,
     matchingRulesFuse,
     matchingRules,
+    matchingRuleRegexes,
   ]);
 
   return (

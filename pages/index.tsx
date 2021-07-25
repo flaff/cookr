@@ -6,8 +6,6 @@ import { LinesToMd } from '../components/LinesToMd'
 import { fetchMatchingRules } from '../contentful/ingredientCategoryMatchingRule';
 
 export default function Home({ matchingRules }) {
-  console.log(matchingRules);
-
   return (
     <div>`
       <Head>
