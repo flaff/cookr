@@ -51,7 +51,7 @@ export function ViewMatchRulesButton({
                   {products?.length > 0 && (
                     <RoundContainer style={{ background: "#f5f5ff" }}>
                       {products.map(
-                        (product) => `${product.name} ${product.matchScore}`
+                        (product) => <div>{product.name} {product.matchScore}</div>
                       )}
                     </RoundContainer>
                   )}

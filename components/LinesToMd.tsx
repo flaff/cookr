@@ -58,7 +58,9 @@ function removeStars(text) {
 function cleanUpText(text) {
   return removeStars(
     removeTrailingCommas(removeUnitsInParenthesis(splitItems(text)))
-  );
+  )
+    .replaceAll(" g ", " g\n")
+    .replaceAll("\n\n", "\n");
 }
 
 export interface Product {
@@ -163,22 +165,11 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
 
   const [markdownText, setMarkdownText] = useState("");
 
-  const matchingRulesFuse = useMemo(
-    () =>
-      new Fuse(matchingRules, {
-        includeScore: true,
-        keys: ["contains"],
-        isCaseSensitive: false,
-        useExtendedSearch: true,
-      }),
-    [matchingRules]
-  );
-
   const matchingRuleRegexes = useMemo(
     () =>
       matchingRules.map((matchingRule) => ({
         ...matchingRule,
-        contains: new RegExp(matchingRule.contains, "i"),
+        containsRegexp: new RegExp(matchingRule.contains, "i"),
       })),
     [matchingRules]
   );
@@ -194,7 +185,6 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
             categoriseMaxScore,
             showMerged,
             mergeSimilar,
-            matchingRulesFuse,
             categorise,
             matchingRuleRegexes,
           }: {
@@ -204,7 +194,6 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
             showMerged: boolean;
             categoriseMaxScore: number;
             categorise: boolean;
-            matchingRulesFuse: any;
             matchingRuleRegexes: any;
           }
         ) => {
@@ -228,37 +217,20 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
             const categorisedProducts = {};
 
             for (const product of products) {
-              const [fuzzyResult] = matchingRulesFuse
-                .search(product.name)
-                .sort((a, b) => (a.score > b.score ? 1 : -1))
-                .filter((result) => result.score <= categoriseMaxScore / 100);
+              const regexResult = matchingRuleRegexes.find((matchingRule) =>
+                matchingRule.containsRegexp.test(product.name)
+              );
 
-              const regexResult =
-                !fuzzyResult &&
-                matchingRuleRegexes.find((matchingRule) =>
-                  matchingRule.contains.test(product.name)
-                );
-
-              const result =
-                fuzzyResult ||
-                (regexResult && {
-                  score: -1,
-                  item: regexResult,
-                });
-
-              const categoryName = result
-                ? result.item.category.name
+              const categoryName = regexResult
+                ? regexResult.category.name
                 : "Nieznane";
 
               categorisedProducts[categoryName] = [
                 ...(categorisedProducts[categoryName] || []),
                 {
                   ...product,
-                  match: matchingRules.find(
-                    (rule) => rule.category.name === categoryName
-                  )?.contains,
+                  match: regexResult?.contains,
                   matchCategory: categoryName,
-                  matchScore: result?.score,
                 },
               ];
 
@@ -268,7 +240,7 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
 
               const sortedCategoryNames = Object.keys(categorisedProducts).sort(
                 (categoryNameA, categoryNameB) =>
-                  (categoryNameA === "Nieznane" && -1) ||
+                  (categoryNameB === "Nieznane" && 1) ||
                   (categoryNameA > categoryNameB ? 1 : -1)
               );
 
@@ -297,7 +269,7 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
         },
         500
       ),
-    [matchingRulesFuse, matchingRules]
+    [matchingRules]
   );
 
   useEffect(() => {
@@ -307,7 +279,6 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
       categoriseMaxScore,
       categorise,
       showMerged,
-      matchingRulesFuse,
       matchingRules,
       matchingRuleRegexes,
     });
@@ -318,7 +289,6 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
     categoriseMaxScore,
     categorise,
     showMerged,
-    matchingRulesFuse,
     matchingRules,
     matchingRuleRegexes,
   ]);
