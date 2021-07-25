@@ -1,0 +1,7 @@
+{
+  "plugins": ["prettier", "unused-imports"],
+  "extends": ["next"],
+  "rules": {
+    "unused-imports/no-unused-imports": "error"
+  }
+}
