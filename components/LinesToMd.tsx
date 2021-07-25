@@ -156,7 +156,7 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
   const [categorise, setCategorise] = useState(true);
   const [sourceText, setSourceText] = useState("");
   const [mergeMaxScore, setMergeMaxScore] = useState(20);
-  const [categoriseMaxScore, setCategoriseMaxScore] = useState(35);
+  const [categoriseMaxScore, setCategoriseMaxScore] = useState(80);
   const [categorisedProducts, setCategorisedProducts] = useState<{
     [category: string]: Product[];
   }>({});
@@ -212,7 +212,7 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
 
             for (const product of products) {
               const [result] = matchingRulesFuse
-                .search(product.name)
+                .search(product.name.toLowerCase())
                 .sort((a, b) => (a.score > b.score ? 1 : -1));
 
               const categoryName =
@@ -226,19 +226,11 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
                   ...product,
                   match: matchingRules.find(
                     (rule) => rule.category.name === categoryName
-                  ).contains,
+                  )?.contains,
                   matchCategory: categoryName,
-                  matchScore: result.score,
+                  matchScore: result?.score,
                 },
               ];
-
-              console.log(
-                product.name,
-                "categorised as",
-                result.item.category.name,
-                result.item.contains,
-                result.score
-              );
 
               setCategorisedProducts(categorisedProducts);
 
@@ -246,7 +238,9 @@ export function LinesToMd({ matchingRules }: LinesToMdProps) {
 
               for (const categoryName of Object.keys(categorisedProducts)) {
                 const products = categorisedProducts[categoryName];
-                nextMarkdownText += `\n## ${categoryName}\n`;
+                if (categoryName !== "Nieznane") {
+                  nextMarkdownText += `\n## ${categoryName}\n`;
+                }
                 nextMarkdownText += products
                   .map(productToText({ showMerged }))
                   .map(toTodo)
