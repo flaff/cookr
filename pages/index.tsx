@@ -3,8 +3,11 @@ import "antd/dist/antd.css";
 
 import { fetchIngredients } from '../contentful/ingredients'
 import { LinesToMd } from '../components/LinesToMd'
+import { fetchMatchingRules } from '../contentful/ingredientCategoryMatchingRule';
 
-export default function Home({ ingredients }) {
+export default function Home({ matchingRules }) {
+  console.log(matchingRules);
+
   return (
     <div>`
       <Head>
@@ -12,7 +15,7 @@ export default function Home({ ingredients }) {
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
-      <LinesToMd />
+      <LinesToMd matchingRules={matchingRules} />
 
       <style jsx global>{`
         html,
@@ -33,11 +36,11 @@ export default function Home({ ingredients }) {
 }
 
 export async function getStaticProps() {
-  const ingredients = await fetchIngredients()
+  const matchingRules = await fetchMatchingRules()
 
   return {
     props: {
-      ingredients,
+      matchingRules,
     },
   }
 }

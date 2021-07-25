@@ -17,7 +17,7 @@ import copy from "copy-to-clipboard";
 import Fuse from "fuse.js";
 import ReactMarkdown from "react-markdown";
 import gfm from "remark-gfm";
-import { debounce } from "lodash";
+import { debounce, uniq } from "lodash";
 import TextArea from "antd/lib/input/TextArea";
 import {
   SortAlphaDown,
@@ -26,11 +26,14 @@ import {
   SortDownAlt,
   Clipboard,
   Stars,
+  Bucket,
 } from "react-bootstrap-icons";
 import { FatSlider } from "./FatSlider";
 import { StyledButton } from "./StyledButton";
 import { ContainerSeparator, RoundContainer, RoundSpacer } from "./containers";
 import { green } from "@ant-design/colors";
+import { IngredientCategoryMatchingRule } from "../contentful/ingredientCategoryMatchingRule";
+import { ViewMatchRulesButton } from "./ViewMatchRulesButton";
 
 function toTodo(text) {
   return `- [ ]  ${text}`;
@@ -45,38 +48,56 @@ function splitItems(text) {
 }
 
 function removeTrailingCommas(text) {
-  return text.replaceAll(', ', '').replaceAll(',');
+  return text.replaceAll(", ", "").replaceAll(",");
 }
 
 function removeStars(text) {
-  return text.replaceAll('*', '');
+  return text.replaceAll("*", "");
 }
 
 function cleanUpText(text) {
-  return removeStars(removeTrailingCommas(removeUnitsInParenthesis(splitItems(text))));
+  return removeStars(
+    removeTrailingCommas(removeUnitsInParenthesis(splitItems(text)))
+  );
 }
 
-function mergeProducts(productA, productB) {
+export interface Product {
+  name: string;
+  amount: number;
+  merged?: Product[];
+  match?: string;
+  matchCategory?: string;
+  matchScore?: number;
+}
+
+function mergeProducts(productA: Product, productB: Product): Product {
   return {
     name: productA.name,
     amount: Number(productA.amount) + Number(productB.amount),
-    mergeInfo:
-      (productA.mergeInfo ||
-        `\n    - [ ] ${productA.name} ${productA.amount} g`) +
-      (productB.mergeInfo ||
-        `\n    - [ ] ${productB.name} ${productB.amount} g`),
+    merged: uniq([
+      ...(productA.merged || []),
+      ...(productB.merged || []),
+      productA,
+      productB,
+    ]),
   };
 }
 
-function reduceSameProducts({ score, fuzzyMatchEnabled }) {
-  if (!fuzzyMatchEnabled) {
+function reduceSameProducts({
+  score,
+  mergeSimilar,
+}: {
+  score: number;
+  mergeSimilar: boolean;
+}) {
+  if (!mergeSimilar) {
     return function (products, product) {
       // TODO: strict merging
       return [...products, product];
     };
   }
 
-  return function (products, product) {
+  return function (products: Product[], product: Product) {
     const fuse = new Fuse(products, { includeScore: true, keys: ["name"] });
     const [result] = fuse
       .search(product.name)
@@ -93,70 +114,180 @@ function reduceSameProducts({ score, fuzzyMatchEnabled }) {
   };
 }
 
-function textToProduct(productText) {
+function textToProduct(productText: string): Product {
   const amount = /(?<amount>\d+)[ ]?g/g.exec(productText)?.groups?.amount || "";
   return {
     name: productText
       .replace(`${amount}g`, "")
-      .replace("*", "")
       .replace(`${amount} g`, "")
       .replaceAll(" , ", "")
       .replaceAll("  ", "")
       .trim(),
-    amount: amount,
+    amount: +amount,
   };
 }
 
-function productToText({ showMergeInfo }) {
-  return function (product) {
+function productToText({ showMerged }): (product: Product) => string {
+  return function (product: Product): string {
     return [
-      showMergeInfo ? `**${product.name}**` : product.name,
+      showMerged ? `**${product.name}**` : product.name,
       `\`${product.amount} g\``,
       `[🔗](https://duckduckgo.com/?q=${product.name.replaceAll(
         " ",
         "+"
       )}&atb=v272-1&iax=images&ia=images)`,
-      showMergeInfo && product.mergeInfo,
+      showMerged &&
+        product.merged
+          ?.map((product) => `\n    - [ ] ${product.name} ${product.amount} g`)
+          .join(""),
     ]
       .filter(Boolean)
       .join(" ");
   };
 }
 
-export function LinesToMd() {
-  const [showMergeInfo, setShowMergeInfo] = useState(true);
-  const [fuzzyMatchEnabled, setFuzzyMatchEnabled] = useState(true);
+interface LinesToMdProps {
+  matchingRules: IngredientCategoryMatchingRule[];
+}
+
+export function LinesToMd({ matchingRules }: LinesToMdProps) {
+  const [showMerged, setShowMerged] = useState(true);
+  const [mergeSimilar, setMergeSimilar] = useState(true);
+  const [categorise, setCategorise] = useState(true);
   const [sourceText, setSourceText] = useState("");
-  const [score, setScore] = useState(20);
+  const [mergeMaxScore, setMergeMaxScore] = useState(20);
+  const [categoriseMaxScore, setCategoriseMaxScore] = useState(35);
+  const [categorisedProducts, setCategorisedProducts] = useState<{
+    [category: string]: Product[];
+  }>({});
 
   const [markdownText, setMarkdownText] = useState("");
 
+  const matchingRulesFuse = useMemo(
+    () => new Fuse(matchingRules, { includeScore: true, keys: ["contains"] }),
+    [matchingRules]
+  );
+
   const updateMarkdownText = useMemo(
     () =>
-      debounce((text, { score, showMergeInfo, fuzzyMatchEnabled }) => {
-        const items = text
-          .split("\n")
-          .filter(Boolean)
-          .map(removeUnitsInParenthesis)
-          .map(textToProduct)
-          .reduce(
-            reduceSameProducts({ score: score / 100, fuzzyMatchEnabled }),
-            []
-          )
-          .sort((productA, productB) =>
-            productA.name > productB.name ? 1 : -1
-          )
-          .map(productToText({ showMergeInfo }));
+      debounce(
+        (
+          text: string,
+          {
+            matchingRules,
+            mergeMaxScore,
+            categoriseMaxScore,
+            showMerged,
+            mergeSimilar,
+            matchingRulesFuse,
+            categorise,
+          }: {
+            matchingRules: IngredientCategoryMatchingRule[];
+            mergeMaxScore: number;
+            mergeSimilar: boolean;
+            showMerged: boolean;
+            categoriseMaxScore: number;
+            categorise: boolean;
+            matchingRulesFuse: any;
+          }
+        ) => {
+          const products = text
+            .split("\n")
+            .filter(Boolean)
+            .map(removeUnitsInParenthesis)
+            .map(textToProduct)
+            .reduce(
+              reduceSameProducts({
+                score: mergeMaxScore / 100,
+                mergeSimilar,
+              }),
+              []
+            )
+            .sort((productA, productB) =>
+              productA.name > productB.name ? 1 : -1
+            );
 
-        const nextMarkdownText = items.map(toTodo).join("\n");
-        setMarkdownText(nextMarkdownText);
-      }, 500),
-    []
+          if (categorise) {
+            const categorisedProducts = {};
+
+            for (const product of products) {
+              const [result] = matchingRulesFuse
+                .search(product.name)
+                .sort((a, b) => (a.score > b.score ? 1 : -1));
+
+              const categoryName =
+                result && result.score <= categoriseMaxScore / 100
+                  ? result.item.category.name
+                  : "Nieznane";
+
+              categorisedProducts[categoryName] = [
+                ...(categorisedProducts[categoryName] || []),
+                {
+                  ...product,
+                  match: matchingRules.find(
+                    (rule) => rule.category.name === categoryName
+                  ).contains,
+                  matchCategory: categoryName,
+                  matchScore: result.score,
+                },
+              ];
+
+              console.log(
+                product.name,
+                "categorised as",
+                result.item.category.name,
+                result.item.contains,
+                result.score
+              );
+
+              setCategorisedProducts(categorisedProducts);
+
+              let nextMarkdownText = "";
+
+              for (const categoryName of Object.keys(categorisedProducts)) {
+                const products = categorisedProducts[categoryName];
+                nextMarkdownText += `\n## ${categoryName}\n`;
+                nextMarkdownText += products
+                  .map(productToText({ showMerged }))
+                  .map(toTodo)
+                  .join("\n");
+              }
+
+              setMarkdownText(nextMarkdownText);
+            }
+          } else {
+            const nextMarkdownText = products
+              .map(productToText({ showMerged }))
+              .map(toTodo)
+              .join("\n");
+            setMarkdownText(nextMarkdownText);
+          }
+        },
+        500
+      ),
+    [matchingRulesFuse, matchingRules]
   );
 
   useEffect(() => {
-    updateMarkdownText(sourceText, { score, fuzzyMatchEnabled, showMergeInfo });
-  }, [score, showMergeInfo, sourceText, updateMarkdownText]);
+    updateMarkdownText(sourceText, {
+      mergeMaxScore,
+      mergeSimilar,
+      categoriseMaxScore,
+      categorise,
+      showMerged,
+      matchingRulesFuse,
+      matchingRules,
+    });
+  }, [
+    sourceText,
+    mergeMaxScore,
+    mergeSimilar,
+    categoriseMaxScore,
+    categorise,
+    showMerged,
+    matchingRulesFuse,
+    matchingRules,
+  ]);
 
   return (
     <>
@@ -197,45 +328,56 @@ export function LinesToMd() {
               <Space style={{ justifyContent: "space-between", width: "100%" }}>
                 <Space>
                   <RoundSpacer>
-                    <Tooltip title="Filter">
-                      <StyledButton
-                        size="large"
-                        icon={<Icon component={Funnel} />}
-                        style={{ borderRadius: "10px" }}
-                      />
-                    </Tooltip>
-                  </RoundSpacer>
-                  <RoundSpacer>
                     <Tooltip title="Merge similar results">
                       <StyledButton
                         size="large"
                         icon={<Icon component={SortDownAlt} />}
-                        type={fuzzyMatchEnabled ? "primary" : "secondary"}
-                        onClick={() => setFuzzyMatchEnabled((i) => !i)}
+                        type={mergeSimilar ? "primary" : "secondary"}
+                        onClick={() => setMergeSimilar((i) => !i)}
                       />
                     </Tooltip>
                     <FatSlider
-                      value={fuzzyMatchEnabled ? score : 0}
-                      onChange={(value) => setScore(value)}
+                      value={mergeSimilar ? mergeMaxScore : 0}
+                      onChange={(value) => setMergeMaxScore(value)}
                       min={0}
                       max={100}
                       step={5}
-                      disabled={!fuzzyMatchEnabled}
+                      disabled={!mergeSimilar}
                     />
                     <ContainerSeparator />
                     <Tooltip title="Show subitems">
                       <StyledButton
                         size="large"
                         icon={<Icon component={ListNested} />}
-                        disabled={!fuzzyMatchEnabled}
+                        disabled={!mergeSimilar}
                         type={
-                          fuzzyMatchEnabled && showMergeInfo
-                            ? "primary"
-                            : "secondary"
+                          mergeSimilar && showMerged ? "primary" : "secondary"
                         }
-                        onClick={() => setShowMergeInfo((i) => !i)}
+                        onClick={() => setShowMerged((i) => !i)}
                       />
                     </Tooltip>
+                  </RoundSpacer>
+                  <RoundSpacer>
+                    <Tooltip title="Categorise results">
+                      <StyledButton
+                        size="large"
+                        icon={<Icon component={Bucket} />}
+                        type={categorise ? "primary" : "secondary"}
+                        onClick={() => setCategorise((i) => !i)}
+                      />
+                    </Tooltip>
+                    <FatSlider
+                      value={categorise ? categoriseMaxScore : 0}
+                      onChange={(value) => setCategoriseMaxScore(value)}
+                      min={0}
+                      max={100}
+                      step={5}
+                      disabled={!categorise}
+                    />
+                    <ViewMatchRulesButton
+                      matchingRules={matchingRules}
+                      categorisedProducts={categorisedProducts}
+                    />
                   </RoundSpacer>
                 </Space>
                 <RoundContainer>

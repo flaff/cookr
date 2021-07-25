@@ -12,6 +12,7 @@
   "dependencies": {
     "@ant-design/colors": "6.0.0",
     "@ant-design/icons": "4.6.2",
+    "@types/lodash": "^4.14.171",
     "antd": "4.16.8",
     "contentful": "7.14.6",
     "copy-to-clipboard": "3.3.1",
